@@ -1,8 +1,8 @@
-const fetch = require("node-fetch");
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
+const fetch = require("node-fetch");
 const db = require("./db");
 
 const app = express();
@@ -86,18 +86,17 @@ app.post("/admin/balance", (req, res) => {
         });
     });
 });
-// ====================== LIVE + UPCOMING MATCHES ======================
+
+// ====================== LIVE MATCHES ======================
 app.get("/live-matches", async (req, res) => {
     try {
-        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a"; // <-- Put your real key
-
+        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a"; // your CricAPI key
         const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
-        console.log("Fetching:", url);
+
+        console.log("Fetching matches:", url);
 
         const response = await fetch(url);
         const data = await response.json();
-
-        console.log("API Response:", data);
 
         if (!data || !data.data || data.data.length === 0) {
             return res.json({
@@ -159,81 +158,30 @@ app.get("/history/:userId", (req, res) => {
         res.json({ success: true, history: rows });
     });
 });
-const fetch = require("node-fetch");
 
-// ===== LIVE ODDS (DEMO VERSION) =====
-// This returns real match data but generates dynamic odds.
-// Later we can connect a paid odds API here.
-
+// ====================== LIVE ODDS ======================
+// Generates odds based on live matches (ready for auto-refresh)
 app.get("/odds", async (req, res) => {
     try {
-        // Use your existing live matches API
-        const response = await fetch("https://portal-backend-4.onrender.com/live-matches");
+        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
+        const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
+
+        console.log("Fetching matches for odds:", url);
+
+        const response = await fetch(url);
         const data = await response.json();
 
-        let matches = [];
-        if (data.matches && Array.isArray(data.matches)) matches = data.matches;
-        else if (data.data && Array.isArray(data.data)) matches = data.data;
-
-        if (!matches || matches.length === 0) {
-            return res.json({ success: false, message: "No live matches" });
+        if (!data || !data.data || data.data.length === 0) {
+            return res.json({ success: false, message: "No live matches available" });
         }
 
-        // Convert matches → markets with odds
-        const markets = matches.map(m => {
+        const markets = data.data.map(m => {
+            if (!m.teams || m.teams.length < 2) return null;
+
             const team1 = m.teams[0];
             const team2 = m.teams[1];
 
-            // Generate dynamic odds (until real API is connected)
-            const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds1Lay = (parseFloat(odds1Back) + 0.05).toFixed(2);
-            const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds2Lay = (parseFloat(odds2Back) + 0.05).toFixed(2);
-
-            return {
-                matchId: m.id || m.name,
-                name: m.name || "Cricket Match",
-                teams: [team1, team2],
-                odds: {
-                    [team1]: { back: odds1Back, lay: odds1Lay },
-                    [team2]: { back: odds2Back, lay: odds2Lay }
-                }
-            };
-        });
-
-        res.json({ success: true, markets });
-
-    } catch (err) {
-        console.error("Odds API Error:", err);
-        res.status(500).json({ success: false, message: "Failed to fetch odds" });
-    }
-});
-const fetch = require("node-fetch");
-
-// ================== ODDS API ==================
-// This creates betting odds based on live matches.
-// (Later we can connect a paid odds provider here)
-
-app.get("/odds", async (req, res) => {
-    try {
-        // Fetch your existing live matches
-        const response = await fetch("https://portal-backend-4.onrender.com/live-matches");
-        const data = await response.json();
-
-        let matches = [];
-        if (data.matches && Array.isArray(data.matches)) matches = data.matches;
-        else if (data.data && Array.isArray(data.data)) matches = data.data;
-
-        if (!matches || matches.length === 0) {
-            return res.json({ success: false, message: "No live matches" });
-        }
-
-        // Convert matches → betting markets with odds
-        const markets = matches.map(m => {
-            const team1 = m.teams[0];
-            const team2 = m.teams[1];
-
-            // Generate demo odds (for now)
+            // Demo odds (replace later with real odds API)
             const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
             const odds1Lay  = (parseFloat(odds1Back) + 0.05).toFixed(2);
             const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
@@ -248,13 +196,17 @@ app.get("/odds", async (req, res) => {
                     [team2]: { back: odds2Back, lay: odds2Lay }
                 }
             };
-        });
+        }).filter(m => m !== null);
 
         res.json({ success: true, markets });
 
-    } catch (err) {
-        console.error("Odds API Error:", err);
-        res.status(500).json({ success: false, message: "Failed to fetch odds" });
+    } catch (error) {
+        console.error("Odds API Error:", error);
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch odds",
+            error: error.toString()
+        });
     }
 });
 
