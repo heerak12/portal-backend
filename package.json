@@ -1,10 +1,11 @@
 {
-  "name": "server",
+  "name": "portal-backend",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "description": "Cricket portal backend",
+  "main": "server.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "postinstall": "npm rebuild sqlite3 --build-from-source"
   },
   "keywords": [],
   "author": "",
@@ -14,7 +15,7 @@
     "bcryptjs": "^3.0.3",
     "body-parser": "^2.2.1",
     "cors": "^2.8.5",
-    "express": "^5.2.1",
+    "express": "^4.19.2",
     "node-fetch": "^2.7.0",
     "sqlite3": "^5.1.7"
   }
