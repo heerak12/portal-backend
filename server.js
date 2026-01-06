@@ -79,19 +79,22 @@ app.get("/live-matches", async (req, res) => {
     }
 });
 
-// ====================== ODDS API ======================
+// ====================== ODDS API (ALWAYS RETURNS MATCHES) ======================
 app.get("/odds", async (req, res) => {
     try {
         const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
         const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
 
-        console.log("Fetching odds from:", url);
-
         const response = await fetch(url);
         const data = await response.json();
 
         if (!data || !data.data || data.data.length === 0) {
-            return res.json({ success: false, message: "No matches available for odds" });
+            // Instead of failing, return empty but valid structure
+            return res.json({
+                success: true,
+                markets: [],
+                message: "No live matches right now"
+            });
         }
 
         const markets = data.data.map(m => {
@@ -100,13 +103,15 @@ app.get("/odds", async (req, res) => {
             const team1 = m.teams[0];
             const team2 = m.teams[1];
 
+            // Generate demo odds
             const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds1Lay = (parseFloat(odds1Back) + 0.05).toFixed(2);
+            const odds1Lay  = (parseFloat(odds1Back) + 0.05).toFixed(2);
             const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds2Lay = (parseFloat(odds2Back) + 0.05).toFixed(2);
+            const odds2Lay  = (parseFloat(odds2Back) + 0.05).toFixed(2);
 
             return {
                 name: m.name || "Cricket Match",
+                status: m.status || "Upcoming",
                 teams: [team1, team2],
                 odds: {
                     [team1]: { back: odds1Back, lay: odds1Lay },
@@ -119,7 +124,11 @@ app.get("/odds", async (req, res) => {
 
     } catch (err) {
         console.error("Odds error:", err);
-        res.status(500).json({ success: false, message: "Failed to fetch odds" });
+        res.status(500).json({
+            success: false,
+            message: "Failed to fetch odds",
+            error: err.toString()
+        });
     }
 });
 
