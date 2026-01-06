@@ -79,31 +79,35 @@ app.get("/live-matches", async (req, res) => {
     }
 });
 
-// ====================== ODDS API (ALWAYS RETURNS MATCHES) ======================
+// ====================== ODDS API (LIVE + UPCOMING) ======================
 app.get("/odds", async (req, res) => {
     try {
         const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
-        const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
+        const url = https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0;
 
         const response = await fetch(url);
         const data = await response.json();
 
-        if (!data || !data.data || data.data.length === 0) {
-            // Instead of failing, return empty but valid structure
+        if (!data || !data.data) {
+            return res.json({ success: false, message: "No data returned from API" });
+        }
+
+        // Take all matches that have 2 teams (live or upcoming)
+        const matches = data.data.filter(m => m.teams && m.teams.length >= 2);
+
+        if (matches.length === 0) {
             return res.json({
                 success: true,
                 markets: [],
-                message: "No live matches right now"
+                message: "No live or upcoming matches right now"
             });
         }
 
-        const markets = data.data.map(m => {
-            if (!m.teams || m.teams.length < 2) return null;
-
+        const markets = matches.map(m => {
             const team1 = m.teams[0];
             const team2 = m.teams[1];
 
-            // Generate demo odds
+            // Demo odds (replace later with real odds provider)
             const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
             const odds1Lay  = (parseFloat(odds1Back) + 0.05).toFixed(2);
             const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
@@ -118,7 +122,7 @@ app.get("/odds", async (req, res) => {
                     [team2]: { back: odds2Back, lay: odds2Lay }
                 }
             };
-        }).filter(Boolean);
+        });
 
         res.json({ success: true, markets });
 
