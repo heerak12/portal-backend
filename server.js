@@ -9,7 +9,7 @@ const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ====================== ADMIN: CREATE USER ======================
+// ====================== REGISTER ======================
 app.post("/register", (req, res) => {
     const { userId, password } = req.body;
 
@@ -33,14 +33,10 @@ app.post("/login", (req, res) => {
     const { userId, password } = req.body;
 
     db.get(`SELECT * FROM users WHERE user_id = ?`, [userId], (err, user) => {
-        if (!user) {
-            return res.json({ success: false, message: "User not found" });
-        }
+        if (!user) return res.json({ success: false, message: "User not found" });
 
         const valid = bcrypt.compareSync(password, user.password);
-        if (!valid) {
-            return res.json({ success: false, message: "Invalid password" });
-        }
+        if (!valid) return res.json({ success: false, message: "Invalid password" });
 
         res.json({
             success: true,
@@ -62,117 +58,40 @@ app.get("/balance/:userId", (req, res) => {
     });
 });
 
-// ====================== ADMIN: CREDIT / DEBIT ======================
-app.post("/admin/balance", (req, res) => {
-    const { userId, amount, type } = req.body;
-
-    db.get(`SELECT balance FROM users WHERE user_id = ?`, [userId], (err, user) => {
-        if (!user) return res.json({ success: false, message: "User not found" });
-
-        let newBalance = user.balance;
-
-        if (type === "credit") {
-            newBalance += amount;
-        } else if (type === "debit") {
-            if (amount > user.balance) {
-                return res.json({ success: false, message: "Insufficient balance" });
-            }
-            newBalance -= amount;
-        }
-
-        db.run(`UPDATE users SET balance = ? WHERE user_id = ?`, [newBalance, userId], (err) => {
-            if (err) return res.json({ success: false, message: "Update failed" });
-            res.json({ success: true, newBalance });
-        });
-    });
-});
-
 // ====================== LIVE MATCHES ======================
 app.get("/live-matches", async (req, res) => {
     try {
-        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a"; // your CricAPI key
+        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
         const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
-
-        console.log("Fetching matches:", url);
 
         const response = await fetch(url);
         const data = await response.json();
 
         if (!data || !data.data || data.data.length === 0) {
-            return res.json({
-                success: false,
-                message: "No matches returned by API",
-                raw: data
-            });
+            return res.json({ success: false, message: "No matches found" });
         }
 
-        res.json({
-            success: true,
-            count: data.data.length,
-            matches: data.data
-        });
+        res.json({ success: true, matches: data.data });
 
-    } catch (error) {
-        console.error("Fetch Error:", error);
-        res.json({
-            success: false,
-            message: "Failed to fetch matches",
-            error: error.toString()
-        });
+    } catch (err) {
+        console.error("Live matches error:", err);
+        res.status(500).json({ success: false, message: "Failed to fetch matches" });
     }
 });
 
-// ====================== PLACE BET ======================
-app.post("/bet", (req, res) => {
-    const { userId, match, team, stake, odds } = req.body;
-
-    db.get(`SELECT balance FROM users WHERE user_id = ?`, [userId], (err, user) => {
-        if (!user) return res.json({ success: false, message: "User not found" });
-
-        if (user.balance < stake) {
-            return res.json({ success: false, message: "Insufficient balance" });
-        }
-
-        let win = Math.random() > 0.5;
-        let profit = win ? (stake * odds) - stake : -stake;
-        let newBalance = win
-            ? user.balance + (stake * odds) - stake
-            : user.balance - stake;
-
-        db.run(`UPDATE users SET balance = ? WHERE user_id = ?`, [newBalance, userId]);
-
-        db.run(
-            `INSERT INTO bets (user_id, match, team, stake, odds, profit) VALUES (?, ?, ?, ?, ?, ?)`,
-            [userId, match, team, stake, odds, profit]
-        );
-
-        res.json({ success: true, win, profit, newBalance });
-    });
-});
-
-// ====================== BET HISTORY ======================
-app.get("/history/:userId", (req, res) => {
-    const userId = req.params.userId;
-
-    db.all(`SELECT * FROM bets WHERE user_id = ?`, [userId], (err, rows) => {
-        res.json({ success: true, history: rows });
-    });
-});
-
-// ====================== LIVE ODDS ======================
-// Generates odds based on live matches (ready for auto-refresh)
+// ====================== ODDS API ======================
 app.get("/odds", async (req, res) => {
     try {
         const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
         const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
 
-        console.log("Fetching matches for odds:", url);
+        console.log("Fetching odds from:", url);
 
         const response = await fetch(url);
         const data = await response.json();
 
         if (!data || !data.data || data.data.length === 0) {
-            return res.json({ success: false, message: "No live matches available" });
+            return res.json({ success: false, message: "No matches available for odds" });
         }
 
         const markets = data.data.map(m => {
@@ -181,14 +100,12 @@ app.get("/odds", async (req, res) => {
             const team1 = m.teams[0];
             const team2 = m.teams[1];
 
-            // Demo odds (replace later with real odds API)
             const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds1Lay  = (parseFloat(odds1Back) + 0.05).toFixed(2);
+            const odds1Lay = (parseFloat(odds1Back) + 0.05).toFixed(2);
             const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds2Lay  = (parseFloat(odds2Back) + 0.05).toFixed(2);
+            const odds2Lay = (parseFloat(odds2Back) + 0.05).toFixed(2);
 
             return {
-                matchId: m.id || m.name,
                 name: m.name || "Cricket Match",
                 teams: [team1, team2],
                 odds: {
@@ -196,21 +113,18 @@ app.get("/odds", async (req, res) => {
                     [team2]: { back: odds2Back, lay: odds2Lay }
                 }
             };
-        }).filter(m => m !== null);
+        }).filter(Boolean);
 
         res.json({ success: true, markets });
 
-    } catch (error) {
-        console.error("Odds API Error:", error);
-        res.status(500).json({
-            success: false,
-            message: "Failed to fetch odds",
-            error: error.toString()
-        });
+    } catch (err) {
+        console.error("Odds error:", err);
+        res.status(500).json({ success: false, message: "Failed to fetch odds" });
     }
 });
 
 // ====================== START SERVER ======================
-app.listen(3000, "0.0.0.0", () => {
-    console.log("Server running on all devices at port 3000");
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, "0.0.0.0", () => {
+    console.log("Server running on port", PORT);
 });
