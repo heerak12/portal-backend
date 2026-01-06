@@ -79,11 +79,11 @@ app.get("/live-matches", async (req, res) => {
     }
 });
 
-// ====================== ODDS API (LIVE + UPCOMING) ======================
+// ====================== ODDS API (LIVE + UPCOMING FIXED) ======================
 app.get("/odds", async (req, res) => {
     try {
         const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
-        const url = https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0;
+        const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
 
         const response = await fetch(url);
         const data = await response.json();
@@ -92,22 +92,25 @@ app.get("/odds", async (req, res) => {
             return res.json({ success: false, message: "No data returned from API" });
         }
 
-        // Take all matches that have 2 teams (live or upcoming)
-        const matches = data.data.filter(m => m.teams && m.teams.length >= 2);
+        // Convert any match (live or upcoming) into markets
+        const markets = data.data.map(m => {
 
-        if (matches.length === 0) {
-            return res.json({
-                success: true,
-                markets: [],
-                message: "No live or upcoming matches right now"
-            });
-        }
+            // CricAPI sometimes gives teams as "teams" or as "teamInfo"
+            let team1 = null;
+            let team2 = null;
 
-        const markets = matches.map(m => {
-            const team1 = m.teams[0];
-            const team2 = m.teams[1];
+            if (Array.isArray(m.teams) && m.teams.length >= 2) {
+                team1 = m.teams[0];
+                team2 = m.teams[1];
+            }
+            else if (Array.isArray(m.teamInfo) && m.teamInfo.length >= 2) {
+                team1 = m.teamInfo[0].name;
+                team2 = m.teamInfo[1].name;
+            }
 
-            // Demo odds (replace later with real odds provider)
+            if (!team1 || !team2) return null;
+
+            // Demo odds (replace later with real provider)
             const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
             const odds1Lay  = (parseFloat(odds1Back) + 0.05).toFixed(2);
             const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
@@ -116,13 +119,22 @@ app.get("/odds", async (req, res) => {
             return {
                 name: m.name || "Cricket Match",
                 status: m.status || "Upcoming",
+                startTime: m.dateTimeGMT || "TBD",
                 teams: [team1, team2],
                 odds: {
                     [team1]: { back: odds1Back, lay: odds1Lay },
                     [team2]: { back: odds2Back, lay: odds2Lay }
                 }
             };
-        });
+        }).filter(Boolean);
+
+        if (markets.length === 0) {
+            return res.json({
+                success: true,
+                markets: [],
+                message: "No live or upcoming matches found by API"
+            });
+        }
 
         res.json({ success: true, markets });
 
