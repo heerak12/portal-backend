@@ -10,11 +10,10 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 
 // ===================== ODDS API CONFIG =====================
-const ODDS_API_KEY = "c34f34e6dfd97cae8a254aa037d959ba"; // <-- PUT YOUR REAL ODDS API KEY HERE
+const ODDS_API_KEY = "c34f34e6dfd97cae8a254aa037d959ba"; // <-- PUT YOUR REAL KEY
 const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
 
-// ===================== DUMMY USER DATABASE =====================
-// Replace this later with real DB (MySQL, SQLite, Mongo, etc.)
+// ===================== TEMP USER DATABASE =====================
 const users = [
   { userId: "admin", password: "1234", balance: 10000 },
   { userId: "test", password: "1234", balance: 5000 }
@@ -95,11 +94,10 @@ app.get("/sports", async (req, res) => {
   }
 });
 
-// ====================== GET ODDS ======================
-// Examples:
+// ====================== GET ODDS (UPCOMING + LIVE) ======================
+// Example:
 // /odds?sport=soccer_epl
 // /odds?sport=soccer_epl&live=true
-// /odds?sport=cricket_ipl
 
 app.get("/odds", async (req, res) => {
   try {
@@ -108,12 +106,13 @@ app.get("/odds", async (req, res) => {
     if (!sport) {
       return res.json({
         success: false,
-        message: "Please provide ?sport="
+        message: "Please provide ?sport= parameter"
       });
     }
 
-    let url = `${ODDS_API_BASE}/sports/${sport}/odds/?apiKey=${ODDS_API_KEY}&regions=uk&markets=h2h,spreads,totals&oddsFormat=decimal`;
+    let url = `${ODDS_API_BASE}/sports/${sport}/odds/?apiKey=${ODDS_API_KEY}&regions=uk&markets=h2h&oddsFormat=decimal`;
 
+    // Only add live filter if explicitly requested
     if (live === "true") {
       url += "&eventType=live";
     }
@@ -131,7 +130,7 @@ app.get("/odds", async (req, res) => {
       });
     }
 
-    // ================= FORMAT FOR DASHBOARD =================
+    // ================= FORMAT FOR FRONTEND =================
     const markets = data.map(match => {
       const home = match.home_team;
       const away = match.away_team;
@@ -167,7 +166,7 @@ app.get("/odds", async (req, res) => {
   } catch (err) {
     res.status(500).json({
       success: false,
-      message: "Odds API failed",
+      message: "Failed to fetch odds",
       error: err.toString()
     });
   }
@@ -186,7 +185,7 @@ app.post("/bet", (req, res) => {
     return res.json({ success: false, message: "Insufficient balance" });
   }
 
-  // Dummy win/lose simulation
+  // Demo bet logic
   const win = Math.random() > 0.5;
   const profit = win ? stake : -stake;
 
