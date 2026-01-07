@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 
 // 🔐 Sportbex API Config
 const SPORTBEX_BASE = "https://trial-api.sportbex.com/api";
-const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 DO NOT expose in frontend
+const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Replace with your real key
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
@@ -134,11 +134,11 @@ app.get("/history/:userId", (req, res) => {
 });
 
 // ===================================================================
-// ====================== SPORTBEX ODDS (DEBUG MODE) ==================
+// ====================== SPORTBEX ODDS (SAFE DEBUG MODE) =============
 // ===================================================================
 app.get("/odds", async (req, res) => {
     try {
-        const sportId = 4; // Cricket (we will expand later)
+        const sportId = 4; // Cricket (we expand later)
 
         // 1️⃣ GET COMPETITIONS
         const compRes = await fetch(
@@ -147,7 +147,7 @@ app.get("/odds", async (req, res) => {
         );
 
         const compText = await compRes.text();
-        console.log("RAW COMPETITIONS RESPONSE:", compText);
+        console.log("SPORTBEX COMPETITIONS RAW:", compText);
 
         let compJson;
         try {
@@ -155,12 +155,11 @@ app.get("/odds", async (req, res) => {
         } catch (e) {
             return res.json({
                 success: false,
-                message: "Sportbex returned non-JSON",
+                message: "Sportbex returned non-JSON response",
                 raw: compText
             });
         }
 
-        // Handle different response formats
         let competitions = [];
         if (Array.isArray(compJson)) competitions = compJson;
         else if (compJson.data && Array.isArray(compJson.data)) competitions = compJson.data;
@@ -176,7 +175,7 @@ app.get("/odds", async (req, res) => {
         if (competitions.length === 0) {
             return res.json({
                 success: false,
-                message: "No competitions available",
+                message: "No competitions returned from Sportbex",
                 response: compJson
             });
         }
@@ -186,14 +185,13 @@ app.get("/odds", async (req, res) => {
         // 2️⃣ LOOP COMPETITIONS
         for (const comp of competitions.slice(0, 2)) {
 
-            // GET EVENTS
             const eventRes = await fetch(
                 `${SPORTBEX_BASE}/odds/${sportId}/get-events?competitionId=${comp.id}`,
                 { headers: sportbexHeaders }
             );
 
             const eventText = await eventRes.text();
-            console.log("RAW EVENTS RESPONSE:", eventText);
+            console.log("SPORTBEX EVENTS RAW:", eventText);
 
             let eventJson;
             try {
@@ -210,14 +208,13 @@ app.get("/odds", async (req, res) => {
 
             for (const ev of events.slice(0, 2)) {
 
-                // 3️⃣ GET MARKET IDS
                 const marketIdRes = await fetch(
                     `${SPORTBEX_BASE}/odds/${sportId}/market-ids?eventId=${ev.id}`,
                     { headers: sportbexHeaders }
                 );
 
                 const marketText = await marketIdRes.text();
-                console.log("RAW MARKET IDS RESPONSE:", marketText);
+                console.log("SPORTBEX MARKET IDS RAW:", marketText);
 
                 let marketJson;
                 try {
@@ -234,7 +231,6 @@ app.get("/odds", async (req, res) => {
 
                 if (marketIds.length === 0) continue;
 
-                // 4️⃣ GET ODDS
                 const oddsRes = await fetch(
                     `${SPORTBEX_BASE}/odds/${sportId}/get-event-odds`,
                     {
@@ -245,7 +241,7 @@ app.get("/odds", async (req, res) => {
                 );
 
                 const oddsText = await oddsRes.text();
-                console.log("RAW ODDS RESPONSE:", oddsText);
+                console.log("SPORTBEX ODDS RAW:", oddsText);
 
                 let oddsJson;
                 try {
