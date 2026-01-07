@@ -198,6 +198,49 @@ app.post("/bet", (req, res) => {
     newBalance: user.balance
   });
 });
+app.post("/change-password", (req, res) => {
+    const { userId, oldPassword, newPassword } = req.body;
+
+    if (!userId || !oldPassword || !newPassword) {
+        return res.json({ success: false, message: "All fields required" });
+    }
+
+    db.get(`SELECT * FROM users WHERE user_id = ?`, [userId], (err, user) => {
+        if (err || !user) {
+            return res.json({ success: false, message: "User not found" });
+        }
+
+        const valid = bcrypt.compareSync(oldPassword, user.password);
+        if (!valid) {
+            return res.json({ success: false, message: "Old password incorrect" });
+        }
+
+        const hashed = bcrypt.hashSync(newPassword, 8);
+        db.run(`UPDATE users SET password = ? WHERE user_id = ?`, [hashed, userId], (err) => {
+            if (err) {
+                return res.json({ success: false, message: "Password update failed" });
+            }
+            res.json({ success: true, message: "Password updated successfully" });
+        });
+    });
+});
+
+
+// ====================== BET HISTORY ======================
+app.get("/history/:userId", (req, res) => {
+    const userId = req.params.userId;
+
+    db.all(
+        `SELECT match, team, stake, odds, status, profit FROM bets WHERE user_id = ? ORDER BY id DESC`,
+        [userId],
+        (err, rows) => {
+            if (err) {
+                return res.json({ success: false, message: "Failed to load history" });
+            }
+            res.json({ success: true, history: rows });
+        }
+    );
+});
 
 // ====================== START SERVER ======================
 app.listen(PORT, "0.0.0.0", () => {
