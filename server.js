@@ -15,7 +15,7 @@ const PORT = process.env.PORT || 3000;
 
 // 🔐 Sportbex API Config (FROM YOUR DASHBOARD)
 const SPORTBEX_BASE = "https://trial-api.sportbex.com";
-const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Replace with your real key
+const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // 🔒 Replace with your real key
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
