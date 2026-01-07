@@ -143,90 +143,92 @@ app.get("/history/:userId", (req, res) => {
     });
 });
 
-// ===================================================================
-// ====================== SPORTBEX ODDS (ALL SPORTS) ==================
-// ===================================================================
+// ====================== SPORTBEX ODDS (CRICKET + FOOTBALL) ======================
 app.get("/odds", async (req, res) => {
     try {
-        let allMarkets = [];
+        const markets = [];
 
-        // 1️⃣ Get competitions
-        const compRes = await fetch(`${SPORTBEX_BASE}/odds/get-competitions`, {
-            headers: sportbexHeaders
-        });
-        const competitions = await compRes.json();
+        // Sport IDs from Sportbex
+        const sports = [
+            { id: 4, name: "Cricket" },
+            { id: 1, name: "Football" }
+        ];
 
-        if (!Array.isArray(competitions)) {
-            return res.json({ success: false, message: "Invalid competitions response" });
-        }
+        for (const sport of sports) {
 
-        // Limit to avoid rate limits
-        for (let i = 0; i < Math.min(competitions.length, 5); i++) {
-            const comp = competitions[i];
-
-            // 2️⃣ Get events
-            const eventsRes = await fetch(
-                `${SPORTBEX_BASE}/odds/get-events?competitionId=${comp.id}`,
+            // 1️⃣ Get competitions
+            const compRes = await fetch(
+                `${SPORTBEX_BASE}/odds/${sport.id}/get-competitions`,
                 { headers: sportbexHeaders }
             );
-            const events = await eventsRes.json();
-            if (!Array.isArray(events)) continue;
+            const competitions = await compRes.json();
 
-            for (let ev of events) {
-                // 3️⃣ Get market IDs
-                const marketsRes = await fetch(
-                    `${SPORTBEX_BASE}/odds/market-ids?eventId=${ev.id}`,
+            if (!Array.isArray(competitions) || competitions.length === 0) continue;
+
+            for (const comp of competitions.slice(0, 3)) {
+
+                // 2️⃣ Get events
+                const eventRes = await fetch(
+                    `${SPORTBEX_BASE}/odds/${sport.id}/get-events?competitionId=${comp.id}`,
                     { headers: sportbexHeaders }
                 );
-                const marketIds = await marketsRes.json();
-                if (!Array.isArray(marketIds) || marketIds.length === 0) continue;
+                const events = await eventRes.json();
 
-                // 4️⃣ Get odds
-                const oddsRes = await fetch(`${SPORTBEX_BASE}/odds/market-odds`, {
-                    method: "POST",
-                    headers: sportbexHeaders,
-                    body: JSON.stringify({
-                        marketIds: marketIds.slice(0, 1)
-                    })
-                });
+                if (!Array.isArray(events) || events.length === 0) continue;
 
-                const oddsData = await oddsRes.json();
-                if (!oddsData || !oddsData.runners || oddsData.runners.length < 2) continue;
+                for (const ev of events.slice(0, 3)) {
 
-                const team1 = oddsData.runners[0].name;
-                const team2 = oddsData.runners[1].name;
+                    // 3️⃣ Get market IDs
+                    const marketIdRes = await fetch(
+                        `${SPORTBEX_BASE}/odds/${sport.id}/market-ids?eventId=${ev.id}`,
+                        { headers: sportbexHeaders }
+                    );
+                    const marketIds = await marketIdRes.json();
 
-                allMarkets.push({
-                    sport: comp.sportName || "Sport",
-                    match: ev.name,
-                    teams: [team1, team2],
-                    odds: {
-                        [team1]: { back: oddsData.runners[0].backPrice },
-                        [team2]: { back: oddsData.runners[1].backPrice }
-                    }
-                });
+                    if (!Array.isArray(marketIds) || marketIds.length === 0) continue;
+
+                    // 4️⃣ Get odds
+                    const oddsRes = await fetch(
+                        `${SPORTBEX_BASE}/odds/${sport.id}/get-event-odds`,
+                        {
+                            method: "POST",
+                            headers: sportbexHeaders,
+                            body: JSON.stringify({
+                                marketIds: [marketIds[0]]
+                            })
+                        }
+                    );
+
+                    const oddsData = await oddsRes.json();
+                    if (!oddsData || !oddsData.runners || oddsData.runners.length < 2) continue;
+
+                    const team1 = oddsData.runners[0].name;
+                    const team2 = oddsData.runners[1].name;
+
+                    markets.push({
+                        sport: sport.name,
+                        match: ev.name,
+                        teams: [team1, team2],
+                        odds: {
+                            [team1]: { back: oddsData.runners[0].backPrice },
+                            [team2]: { back: oddsData.runners[1].backPrice }
+                        }
+                    });
+                }
             }
         }
 
-        if (allMarkets.length === 0) {
+        if (markets.length === 0) {
             return res.json({
-                success: true,
-                markets: [],
-                message: "No markets available from Sportbex"
+                success: false,
+                message: "No data returned from Sportbex API"
             });
         }
 
-        res.json({ success: true, markets: allMarkets });
+        res.json({ success: true, markets });
 
     } catch (err) {
-        console.error("Sportbex API Error:", err);
-        res.status(500).json({
-            success: false,
-            message: "Sportbex API integration failed",
-            error: err.toString()
-        });
-    }
-});
+        console.error("Sportb
 
 // ====================== ROOT ======================
 app.get("/", (req, res) => {
