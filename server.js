@@ -4,7 +4,7 @@ const bodyParser = require("body-parser");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const fetch = require("node-fetch");
-const db = require("./db"); // Your sqlite db connection
+const db = require("./db");
 
 const app = express();
 app.use(cors());
@@ -13,16 +13,16 @@ app.use(bodyParser.json());
 // ====================== CONFIG ======================
 const PORT = process.env.PORT || 3000;
 
-// Sportbex API
+// 🔐 Sportbex API Config
 const SPORTBEX_BASE = "https://trial-api.sportbex.com/api";
-const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // 🔒 KEEP SECRET
+const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 DO NOT expose in frontend
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
     "Content-Type": "application/json"
 };
 
-// ====================== REGISTER USER ======================
+// ====================== REGISTER ======================
 app.post("/register", (req, res) => {
     const { userId, password } = req.body;
     if (!userId || !password) {
@@ -48,26 +48,19 @@ app.post("/login", (req, res) => {
     const { userId, password } = req.body;
 
     db.get(`SELECT * FROM users WHERE user_id = ?`, [userId], (err, user) => {
-        if (!user) {
-            return res.json({ success: false, message: "User not found" });
-        }
+        if (!user) return res.json({ success: false, message: "User not found" });
 
         const valid = bcrypt.compareSync(password, user.password);
-        if (!valid) {
-            return res.json({ success: false, message: "Invalid password" });
-        }
+        if (!valid) return res.json({ success: false, message: "Invalid password" });
 
         res.json({
             success: true,
-            user: {
-                userId: user.user_id,
-                balance: user.balance
-            }
+            user: { userId: user.user_id, balance: user.balance }
         });
     });
 });
 
-// ====================== GET BALANCE ======================
+// ====================== BALANCE ======================
 app.get("/balance/:userId", (req, res) => {
     const userId = req.params.userId;
 
@@ -77,7 +70,7 @@ app.get("/balance/:userId", (req, res) => {
     });
 });
 
-// ====================== ADMIN: CREDIT / DEBIT ======================
+// ====================== ADMIN CREDIT / DEBIT ======================
 app.post("/admin/balance", (req, res) => {
     const { userId, amount, type } = req.body;
 
@@ -85,10 +78,8 @@ app.post("/admin/balance", (req, res) => {
         if (!user) return res.json({ success: false, message: "User not found" });
 
         let newBalance = user.balance;
-
-        if (type === "credit") {
-            newBalance += amount;
-        } else if (type === "debit") {
+        if (type === "credit") newBalance += amount;
+        if (type === "debit") {
             if (amount > user.balance) {
                 return res.json({ success: false, message: "Insufficient balance" });
             }
@@ -98,7 +89,7 @@ app.post("/admin/balance", (req, res) => {
         db.run(
             `UPDATE users SET balance = ? WHERE user_id = ?`,
             [newBalance, userId],
-            (err) => {
+            err => {
                 if (err) return res.json({ success: false, message: "Update failed" });
                 res.json({ success: true, newBalance });
             }
@@ -112,7 +103,6 @@ app.post("/bet", (req, res) => {
 
     db.get(`SELECT balance FROM users WHERE user_id = ?`, [userId], (err, user) => {
         if (!user) return res.json({ success: false, message: "User not found" });
-
         if (user.balance < stake) {
             return res.json({ success: false, message: "Insufficient balance" });
         }
@@ -143,99 +133,170 @@ app.get("/history/:userId", (req, res) => {
     });
 });
 
-// ====================== SPORTBEX ODDS (CRICKET + FOOTBALL) ======================
+// ===================================================================
+// ====================== SPORTBEX ODDS (DEBUG MODE) ==================
+// ===================================================================
 app.get("/odds", async (req, res) => {
     try {
+        const sportId = 4; // Cricket (we will expand later)
+
+        // 1️⃣ GET COMPETITIONS
+        const compRes = await fetch(
+            `${SPORTBEX_BASE}/odds/${sportId}/get-competitions`,
+            { headers: sportbexHeaders }
+        );
+
+        const compText = await compRes.text();
+        console.log("RAW COMPETITIONS RESPONSE:", compText);
+
+        let compJson;
+        try {
+            compJson = JSON.parse(compText);
+        } catch (e) {
+            return res.json({
+                success: false,
+                message: "Sportbex returned non-JSON",
+                raw: compText
+            });
+        }
+
+        // Handle different response formats
+        let competitions = [];
+        if (Array.isArray(compJson)) competitions = compJson;
+        else if (compJson.data && Array.isArray(compJson.data)) competitions = compJson.data;
+        else if (compJson.result && Array.isArray(compJson.result)) competitions = compJson.result;
+        else {
+            return res.json({
+                success: false,
+                message: "Invalid competitions response",
+                response: compJson
+            });
+        }
+
+        if (competitions.length === 0) {
+            return res.json({
+                success: false,
+                message: "No competitions available",
+                response: compJson
+            });
+        }
+
         const markets = [];
 
-        // Sport IDs from Sportbex
-        const sports = [
-            { id: 4, name: "Cricket" },
-            { id: 1, name: "Football" }
-        ];
+        // 2️⃣ LOOP COMPETITIONS
+        for (const comp of competitions.slice(0, 2)) {
 
-        for (const sport of sports) {
-
-            // 1️⃣ Get competitions
-            const compRes = await fetch(
-                `${SPORTBEX_BASE}/odds/${sport.id}/get-competitions`,
+            // GET EVENTS
+            const eventRes = await fetch(
+                `${SPORTBEX_BASE}/odds/${sportId}/get-events?competitionId=${comp.id}`,
                 { headers: sportbexHeaders }
             );
-            const competitions = await compRes.json();
 
-            if (!Array.isArray(competitions) || competitions.length === 0) continue;
+            const eventText = await eventRes.text();
+            console.log("RAW EVENTS RESPONSE:", eventText);
 
-            for (const comp of competitions.slice(0, 3)) {
+            let eventJson;
+            try {
+                eventJson = JSON.parse(eventText);
+            } catch (e) {
+                continue;
+            }
 
-                // 2️⃣ Get events
-                const eventRes = await fetch(
-                    `${SPORTBEX_BASE}/odds/${sport.id}/get-events?competitionId=${comp.id}`,
+            let events = [];
+            if (Array.isArray(eventJson)) events = eventJson;
+            else if (eventJson.data && Array.isArray(eventJson.data)) events = eventJson.data;
+            else if (eventJson.result && Array.isArray(eventJson.result)) events = eventJson.result;
+            else continue;
+
+            for (const ev of events.slice(0, 2)) {
+
+                // 3️⃣ GET MARKET IDS
+                const marketIdRes = await fetch(
+                    `${SPORTBEX_BASE}/odds/${sportId}/market-ids?eventId=${ev.id}`,
                     { headers: sportbexHeaders }
                 );
-                const events = await eventRes.json();
 
-                if (!Array.isArray(events) || events.length === 0) continue;
+                const marketText = await marketIdRes.text();
+                console.log("RAW MARKET IDS RESPONSE:", marketText);
 
-                for (const ev of events.slice(0, 3)) {
-
-                    // 3️⃣ Get market IDs
-                    const marketIdRes = await fetch(
-                        `${SPORTBEX_BASE}/odds/${sport.id}/market-ids?eventId=${ev.id}`,
-                        { headers: sportbexHeaders }
-                    );
-                    const marketIds = await marketIdRes.json();
-
-                    if (!Array.isArray(marketIds) || marketIds.length === 0) continue;
-
-                    // 4️⃣ Get odds
-                    const oddsRes = await fetch(
-                        `${SPORTBEX_BASE}/odds/${sport.id}/get-event-odds`,
-                        {
-                            method: "POST",
-                            headers: sportbexHeaders,
-                            body: JSON.stringify({
-                                marketIds: [marketIds[0]]
-                            })
-                        }
-                    );
-
-                    const oddsData = await oddsRes.json();
-                    if (!oddsData || !oddsData.runners || oddsData.runners.length < 2) continue;
-
-                    const team1 = oddsData.runners[0].name;
-                    const team2 = oddsData.runners[1].name;
-
-                    markets.push({
-                        sport: sport.name,
-                        match: ev.name,
-                        teams: [team1, team2],
-                        odds: {
-                            [team1]: { back: oddsData.runners[0].backPrice },
-                            [team2]: { back: oddsData.runners[1].backPrice }
-                        }
-                    });
+                let marketJson;
+                try {
+                    marketJson = JSON.parse(marketText);
+                } catch (e) {
+                    continue;
                 }
+
+                let marketIds = [];
+                if (Array.isArray(marketJson)) marketIds = marketJson;
+                else if (marketJson.data && Array.isArray(marketJson.data)) marketIds = marketJson.data;
+                else if (marketJson.result && Array.isArray(marketJson.result)) marketIds = marketJson.result;
+                else continue;
+
+                if (marketIds.length === 0) continue;
+
+                // 4️⃣ GET ODDS
+                const oddsRes = await fetch(
+                    `${SPORTBEX_BASE}/odds/${sportId}/get-event-odds`,
+                    {
+                        method: "POST",
+                        headers: sportbexHeaders,
+                        body: JSON.stringify({ marketIds: [marketIds[0]] })
+                    }
+                );
+
+                const oddsText = await oddsRes.text();
+                console.log("RAW ODDS RESPONSE:", oddsText);
+
+                let oddsJson;
+                try {
+                    oddsJson = JSON.parse(oddsText);
+                } catch (e) {
+                    continue;
+                }
+
+                const runners = oddsJson.runners || oddsJson.data?.runners || oddsJson.result?.runners;
+                if (!runners || runners.length < 2) continue;
+
+                const team1 = runners[0].name;
+                const team2 = runners[1].name;
+
+                markets.push({
+                    sport: "Cricket",
+                    match: ev.name,
+                    teams: [team1, team2],
+                    odds: {
+                        [team1]: { back: runners[0].backPrice },
+                        [team2]: { back: runners[1].backPrice }
+                    }
+                });
             }
         }
 
         if (markets.length === 0) {
             return res.json({
                 success: false,
-                message: "No data returned from Sportbex API"
+                message: "No markets returned from Sportbex"
             });
         }
 
         res.json({ success: true, markets });
 
     } catch (err) {
-        console.error("Sportb
+        console.error("SPORTBEX ERROR:", err);
+        res.status(500).json({
+            success: false,
+            message: "Sportbex API failed",
+            error: err.toString()
+        });
+    }
+});
 
 // ====================== ROOT ======================
 app.get("/", (req, res) => {
     res.send("Sportbex Betting API is running");
 });
 
-// ====================== START SERVER ======================
+// ====================== START ======================
 app.listen(PORT, "0.0.0.0", () => {
     console.log(`Server running on port ${PORT}`);
 });
