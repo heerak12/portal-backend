@@ -14,7 +14,7 @@ app.use(bodyParser.json());
 const PORT = process.env.PORT || 3000;
 
 // 🔐 Sportbex API Config
-const SPORTBEX_BASE = "https://trial-api.sportbex.com/api";
+const SPORTBEX_BASE = "https://trial-api.sportbex.com";
 const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Replace with your real key
 
 const sportbexHeaders = {
