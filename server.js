@@ -13,14 +13,49 @@ app.use(bodyParser.json());
 // ====================== CONFIG ======================
 const PORT = process.env.PORT || 3000;
 
-// 🔐 Sportbex API Config (FROM YOUR DASHBOARD)
+// 🔐 Sportbex API Config
 const SPORTBEX_BASE = "https://trial-api.sportbex.com";
-const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // 🔒 Replace with your real key
+
+// ⚠️ IMPORTANT: Replace with your NEW regenerated key
+const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j";
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
     "Content-Type": "application/json"
 };
+
+// ====================== ROOT ======================
+app.get("/", (req, res) => {
+    res.send("Sportbex Betting API is running");
+});
+
+// ====================== SPORTBEX TEST ======================
+// This confirms if your API key is valid or not
+app.get("/sportbex-test", async (req, res) => {
+    try {
+        const testUrl = `${SPORTBEX_BASE}/api/betfair/competition/8`;
+
+        const response = await fetch(testUrl, {
+            headers: sportbexHeaders
+        });
+
+        const text = await response.text();
+
+        res.json({
+            success: true,
+            url: testUrl,
+            status: response.status,
+            rawResponse: text
+        });
+
+    } catch (err) {
+        res.json({
+            success: false,
+            message: "Sportbex API test failed",
+            error: err.toString()
+        });
+    }
+});
 
 // ====================== REGISTER ======================
 app.post("/register", (req, res) => {
@@ -138,9 +173,9 @@ app.get("/history/:userId", (req, res) => {
 // ===================================================================
 app.get("/odds", async (req, res) => {
     try {
-        const sportId = 8; // Cricket (from your screenshot)
+        const sportId = 8; // Cricket
 
-        // 1️⃣ GET COMPETITIONS (CORRECT PATH)
+        // 1️⃣ GET COMPETITIONS
         const compRes = await fetch(
             `${SPORTBEX_BASE}/api/betfair/competition/${sportId}`,
             { headers: sportbexHeaders }
@@ -235,11 +270,6 @@ app.get("/odds", async (req, res) => {
             error: err.toString()
         });
     }
-});
-
-// ====================== ROOT ======================
-app.get("/", (req, res) => {
-    res.send("Sportbex Betting API is running");
 });
 
 // ====================== START ======================
