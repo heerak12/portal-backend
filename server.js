@@ -1,17 +1,15 @@
 const express = require("express");
-const bodyParser = require("body-parser");
 const cors = require("cors");
 const fetch = require("node-fetch");
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
 
 const PORT = process.env.PORT || 3000;
 
 // ====================== SPORTBEX CONFIG ======================
 const SPORTBEX_BASE = "https://trial-api.sportbex.com";
-const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // PUT YOUR REAL KEY HERE
+const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // <-- Put your real key here
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
@@ -25,13 +23,17 @@ app.get("/", (req, res) => {
 
 // ====================== TEST ROUTE ======================
 app.get("/sportbex-test", (req, res) => {
-    res.json({ success: true, message: "sportbex-test route is working" });
+    res.json({
+        success: true,
+        message: "sportbex-test route is working"
+    });
 });
 
 // ===================================================================
-// ====================== GENERIC PROXY (DISCOVERY TOOL) ==============
+// ====================== SPORTBEX PROXY (DISCOVERY) ==================
 // ===================================================================
-// Usage: /sportbex-proxy?path=api/betfair/markets/4/1
+// Example:
+// /sportbex-proxy?path=api/betfair/markets/4/1
 
 app.get("/sportbex-proxy", async (req, res) => {
     try {
@@ -56,7 +58,7 @@ app.get("/sportbex-proxy", async (req, res) => {
         } catch {
             return res.json({
                 success: false,
-                message: "Invalid JSON response",
+                message: "Invalid JSON from Sportbex",
                 raw: text
             });
         }
@@ -79,12 +81,12 @@ app.get("/sportbex-proxy", async (req, res) => {
 // ===================================================================
 // ====================== ODDS ENDPOINT ===============================
 // ===================================================================
-// Example: /odds?sportId=4&competitionId=1
+// Example:
+// /odds?sportId=4&competitionId=1
 
 app.get("/odds", async (req, res) => {
     try {
-        const sportId = req.query.sportId;
-        const competitionId = req.query.competitionId;
+        const { sportId, competitionId } = req.query;
 
         if (!sportId || !competitionId) {
             return res.json({
@@ -97,7 +99,18 @@ app.get("/odds", async (req, res) => {
         console.log("Fetching:", url);
 
         const response = await fetch(url, { headers: sportbexHeaders });
-        const data = await response.json();
+        const text = await response.text();
+
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch {
+            return res.json({
+                success: false,
+                message: "Invalid JSON from Sportbex",
+                raw: text
+            });
+        }
 
         if (!Array.isArray(data) || data.length === 0) {
             return res.json({
