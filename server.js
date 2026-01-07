@@ -28,27 +28,11 @@ app.get("/", (req, res) => {
 });
 
 // ====================== SPORTBEX TEST ======================
-app.get("/sportbex-test", async (req, res) => {
-    try {
-        const testUrl = `${SPORTBEX_BASE}/api/betfair/markets/4/1`;
-
-        const response = await fetch(testUrl, { headers: sportbexHeaders });
-        const text = await response.text();
-
-        res.json({
-            success: true,
-            url: testUrl,
-            status: response.status,
-            rawResponse: text
-        });
-
-    } catch (err) {
-        res.json({
-            success: false,
-            message: "Sportbex API test failed",
-            error: err.toString()
-        });
-    }
+app.get("/sportbex-test", (req, res) => {
+    res.json({
+        success: true,
+        message: "sportbex-test route is working"
+    });
 });
 
 // ====================== REGISTER ======================
@@ -166,9 +150,7 @@ app.get("/history/:userId", (req, res) => {
 // ===================================================================
 // ====================== SPORTBEX ODDS API ===========================
 // ===================================================================
-
-// Example usage:
-// /odds?sportId=4&competitionId=1
+// Example: /odds?sportId=4&competitionId=1
 
 app.get("/odds", async (req, res) => {
     try {
@@ -179,7 +161,18 @@ app.get("/odds", async (req, res) => {
         console.log("Fetching:", url);
 
         const response = await fetch(url, { headers: sportbexHeaders });
-        const data = await response.json();
+        const text = await response.text();
+
+        let data;
+        try {
+            data = JSON.parse(text);
+        } catch {
+            return res.json({
+                success: false,
+                message: "Invalid JSON from Sportbex",
+                raw: text
+            });
+        }
 
         if (!data || Object.keys(data).length === 0) {
             return res.json({
