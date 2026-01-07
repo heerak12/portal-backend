@@ -7,130 +7,107 @@ app.use(cors());
 
 const PORT = process.env.PORT || 3000;
 
-// ====================== SPORTBEX CONFIG ======================
-const SPORTBEX_BASE = "https://trial-api.sportbex.com";
-const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // <-- Put your real key here
-
-const sportbexHeaders = {
-    "sportbex-api-key": SPORTBEX_KEY,
-    "Content-Type": "application/json"
-};
+// ===================== ODDS API CONFIG =====================
+const ODDS_API_KEY = "c34f34e6dfd97cae8a254aa037d959ba"; // <-- PUT YOUR REAL KEY HERE
+const ODDS_API_BASE = "https://api.the-odds-api.com/v4";
 
 // ====================== ROOT ======================
 app.get("/", (req, res) => {
-    res.send("Sportbex Betting API is running");
+    res.send("Odds API Betting Server is running");
 });
 
-// ====================== TEST ROUTE ======================
-app.get("/sportbex-test", (req, res) => {
-    res.json({
-        success: true,
-        message: "sportbex-test route is working"
-    });
-});
-
-// ===================================================================
-// ====================== SPORTBEX PROXY (DISCOVERY) ==================
-// ===================================================================
-// Example:
-// /sportbex-proxy?path=api/betfair/markets/4/1
-
-app.get("/sportbex-proxy", async (req, res) => {
+// ====================== GET ALL SPORTS ======================
+app.get("/sports", async (req, res) => {
     try {
-        const { path } = req.query;
-
-        if (!path) {
-            return res.json({
-                success: false,
-                message: "Please provide ?path=..."
-            });
-        }
-
-        const url = `${SPORTBEX_BASE}/${path}`;
-        console.log("Proxy Fetch:", url);
-
-        const response = await fetch(url, { headers: sportbexHeaders });
-        const text = await response.text();
-
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch {
-            return res.json({
-                success: false,
-                message: "Invalid JSON from Sportbex",
-                raw: text
-            });
-        }
+        const url = `${ODDS_API_BASE}/sports?apiKey=${ODDS_API_KEY}`;
+        const response = await fetch(url);
+        const data = await response.json();
 
         res.json({
             success: true,
-            url,
-            data
+            sports: data
         });
-
     } catch (err) {
-        res.json({
+        res.status(500).json({
             success: false,
-            message: "Sportbex proxy failed",
+            message: "Failed to fetch sports",
             error: err.toString()
         });
     }
 });
 
-// ===================================================================
-// ====================== ODDS ENDPOINT ===============================
-// ===================================================================
+// ====================== GET ODDS ======================
 // Example:
-// /odds?sportId=4&competitionId=1
+// /odds?sport=soccer_epl
+// /odds?sport=cricket_ipl&live=true
 
 app.get("/odds", async (req, res) => {
     try {
-        const { sportId, competitionId } = req.query;
+        const { sport, live } = req.query;
 
-        if (!sportId || !competitionId) {
+        if (!sport) {
             return res.json({
                 success: false,
-                message: "Please provide sportId and competitionId"
+                message: "Please provide ?sport="
             });
         }
 
-        const url = `${SPORTBEX_BASE}/api/betfair/markets/${sportId}/${competitionId}`;
+        let url = `${ODDS_API_BASE}/sports/${sport}/odds/?apiKey=${ODDS_API_KEY}&regions=uk&markets=h2h,spreads,totals&oddsFormat=decimal`;
+
+        if (live === "true") {
+            url += "&eventType=live";
+        }
+
         console.log("Fetching:", url);
 
-        const response = await fetch(url, { headers: sportbexHeaders });
-        const text = await response.text();
-
-        let data;
-        try {
-            data = JSON.parse(text);
-        } catch {
-            return res.json({
-                success: false,
-                message: "Invalid JSON from Sportbex",
-                raw: text
-            });
-        }
+        const response = await fetch(url);
+        const data = await response.json();
 
         if (!Array.isArray(data) || data.length === 0) {
             return res.json({
                 success: false,
-                message: "No data returned from Sportbex",
-                response: data
+                message: "No matches available",
+                raw: data
             });
         }
 
+        // Convert Odds API format → Clean betting format
+        const markets = data.map(match => {
+            const home = match.home_team;
+            const away = match.away_team;
+
+            let odds = {};
+
+            match.bookmakers.forEach(bookmaker => {
+                bookmaker.markets.forEach(market => {
+                    if (market.key === "h2h") {
+                        market.outcomes.forEach(o => {
+                            odds[o.name] = o.price;
+                        });
+                    }
+                });
+            });
+
+            return {
+                matchId: match.id,
+                match: `${home} vs ${away}`,
+                sport: match.sport_title,
+                startTime: match.commence_time,
+                teams: [home, away],
+                odds: odds
+            };
+        });
+
         res.json({
             success: true,
-            sportId,
-            competitionId,
-            markets: data
+            count: markets.length,
+            markets
         });
 
     } catch (err) {
         res.status(500).json({
             success: false,
-            message: "Sportbex API failed",
+            message: "Odds API failed",
             error: err.toString()
         });
     }
