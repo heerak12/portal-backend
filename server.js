@@ -13,9 +13,9 @@ app.use(bodyParser.json());
 // ====================== CONFIG ======================
 const PORT = process.env.PORT || 3000;
 
-// 🔐 Sportbex API Config
+// 🔐 Sportbex API Config (CORRECT STRUCTURE)
 const SPORTBEX_BASE = "https://trial-api.sportbex.com";
-const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Replace with your real key
+const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Put your real key here
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
@@ -134,105 +134,56 @@ app.get("/history/:userId", (req, res) => {
 });
 
 // ===================================================================
-// ====================== SPORTBEX ODDS (SAFE DEBUG MODE) =============
+// ====================== SPORTBEX ODDS (CRICKET) =====================
 // ===================================================================
 app.get("/odds", async (req, res) => {
     try {
-        const sportId = 4; // Cricket (we expand later)
+        const sportId = 8; // Cricket as per your screenshot
 
         // 1️⃣ GET COMPETITIONS
         const compRes = await fetch(
-            `${SPORTBEX_BASE}/odds/${sportId}/get-competitions`,
+            `${SPORTBEX_BASE}/api/betfair/competitions/${sportId}`,
             { headers: sportbexHeaders }
         );
 
-        const compText = await compRes.text();
-        console.log("SPORTBEX COMPETITIONS RAW:", compText);
+        const competitions = await compRes.json();
 
-        let compJson;
-        try {
-            compJson = JSON.parse(compText);
-        } catch (e) {
+        if (!Array.isArray(competitions) || competitions.length === 0) {
             return res.json({
                 success: false,
-                message: "Sportbex returned non-JSON response",
-                raw: compText
-            });
-        }
-
-        let competitions = [];
-        if (Array.isArray(compJson)) competitions = compJson;
-        else if (compJson.data && Array.isArray(compJson.data)) competitions = compJson.data;
-        else if (compJson.result && Array.isArray(compJson.result)) competitions = compJson.result;
-        else {
-            return res.json({
-                success: false,
-                message: "Invalid competitions response",
-                response: compJson
-            });
-        }
-
-        if (competitions.length === 0) {
-            return res.json({
-                success: false,
-                message: "No competitions returned from Sportbex",
-                response: compJson
+                message: "No competitions returned",
+                response: competitions
             });
         }
 
         const markets = [];
 
         // 2️⃣ LOOP COMPETITIONS
-        for (const comp of competitions.slice(0, 2)) {
+        for (const comp of competitions.slice(0, 3)) {
 
+            // GET EVENTS
             const eventRes = await fetch(
-                `${SPORTBEX_BASE}/odds/${sportId}/get-events?competitionId=${comp.id}`,
+                `${SPORTBEX_BASE}/api/betfair/event/${sportId}/${comp.id}`,
                 { headers: sportbexHeaders }
             );
 
-            const eventText = await eventRes.text();
-            console.log("SPORTBEX EVENTS RAW:", eventText);
+            const events = await eventRes.json();
+            if (!Array.isArray(events) || events.length === 0) continue;
 
-            let eventJson;
-            try {
-                eventJson = JSON.parse(eventText);
-            } catch (e) {
-                continue;
-            }
+            for (const ev of events.slice(0, 3)) {
 
-            let events = [];
-            if (Array.isArray(eventJson)) events = eventJson;
-            else if (eventJson.data && Array.isArray(eventJson.data)) events = eventJson.data;
-            else if (eventJson.result && Array.isArray(eventJson.result)) events = eventJson.result;
-            else continue;
-
-            for (const ev of events.slice(0, 2)) {
-
+                // 3️⃣ GET MARKET IDS
                 const marketIdRes = await fetch(
-                    `${SPORTBEX_BASE}/odds/${sportId}/market-ids?eventId=${ev.id}`,
+                    `${SPORTBEX_BASE}/api/betfair/marketIds/${sportId}/${ev.id}`,
                     { headers: sportbexHeaders }
                 );
 
-                const marketText = await marketIdRes.text();
-                console.log("SPORTBEX MARKET IDS RAW:", marketText);
+                const marketIds = await marketIdRes.json();
+                if (!Array.isArray(marketIds) || marketIds.length === 0) continue;
 
-                let marketJson;
-                try {
-                    marketJson = JSON.parse(marketText);
-                } catch (e) {
-                    continue;
-                }
-
-                let marketIds = [];
-                if (Array.isArray(marketJson)) marketIds = marketJson;
-                else if (marketJson.data && Array.isArray(marketJson.data)) marketIds = marketJson.data;
-                else if (marketJson.result && Array.isArray(marketJson.result)) marketIds = marketJson.result;
-                else continue;
-
-                if (marketIds.length === 0) continue;
-
+                // 4️⃣ GET ODDS
                 const oddsRes = await fetch(
-                    `${SPORTBEX_BASE}/odds/${sportId}/get-event-odds`,
+                    `${SPORTBEX_BASE}/api/betfair/listMarketBook/${sportId}`,
                     {
                         method: "POST",
                         headers: sportbexHeaders,
@@ -240,29 +191,28 @@ app.get("/odds", async (req, res) => {
                     }
                 );
 
-                const oddsText = await oddsRes.text();
-                console.log("SPORTBEX ODDS RAW:", oddsText);
+                const oddsData = await oddsRes.json();
+                if (!Array.isArray(oddsData) || oddsData.length === 0) continue;
 
-                let oddsJson;
-                try {
-                    oddsJson = JSON.parse(oddsText);
-                } catch (e) {
-                    continue;
-                }
-
-                const runners = oddsJson.runners || oddsJson.data?.runners || oddsJson.result?.runners;
+                const runners = oddsData[0].runners;
                 if (!runners || runners.length < 2) continue;
 
-                const team1 = runners[0].name;
-                const team2 = runners[1].name;
+                const team1 = runners[0].runnerName;
+                const team2 = runners[1].runnerName;
 
                 markets.push({
                     sport: "Cricket",
-                    match: ev.name,
+                    match: ev.eventName,
                     teams: [team1, team2],
                     odds: {
-                        [team1]: { back: runners[0].backPrice },
-                        [team2]: { back: runners[1].backPrice }
+                        [team1]: {
+                            back: runners[0].ex.availableToBack?.[0]?.price || null,
+                            lay: runners[0].ex.availableToLay?.[0]?.price || null
+                        },
+                        [team2]: {
+                            back: runners[1].ex.availableToBack?.[0]?.price || null,
+                            lay: runners[1].ex.availableToLay?.[0]?.price || null
+                        }
                     }
                 });
             }
