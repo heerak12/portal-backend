@@ -1,31 +1,46 @@
+// ====================== IMPORTS ======================
 const express = require("express");
 const bodyParser = require("body-parser");
 const cors = require("cors");
 const bcrypt = require("bcryptjs");
 const fetch = require("node-fetch");
-const db = require("./db");
+const db = require("./db"); // Your sqlite db connection
 
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
 
-// ====================== REGISTER ======================
+// ====================== CONFIG ======================
+const PORT = process.env.PORT || 3000;
+
+// Sportbex API
+const SPORTBEX_BASE = "https://trial-api.sportbex.com/api";
+const SPORTBEX_KEY = "j5nwX8kEl6qES0lZFCW8t9YKFSxGWCkX32AhXR0j"; // 🔒 KEEP SECRET
+
+const sportbexHeaders = {
+    "sportbex-api-key": SPORTBEX_KEY,
+    "Content-Type": "application/json"
+};
+
+// ====================== REGISTER USER ======================
 app.post("/register", (req, res) => {
     const { userId, password } = req.body;
-
     if (!userId || !password) {
         return res.json({ success: false, message: "User ID and password required" });
     }
 
     const hashed = bcrypt.hashSync(password, 8);
 
-    const query = `INSERT INTO users (user_id, password) VALUES (?, ?)`;
-    db.run(query, [userId, hashed], function (err) {
-        if (err) {
-            return res.json({ success: false, message: "User ID already exists" });
+    db.run(
+        `INSERT INTO users (user_id, password, balance) VALUES (?, ?, 0)`,
+        [userId, hashed],
+        function (err) {
+            if (err) {
+                return res.json({ success: false, message: "User ID already exists" });
+            }
+            res.json({ success: true, message: "User created successfully" });
         }
-        res.json({ success: true, message: "User created successfully" });
-    });
+    );
 });
 
 // ====================== LOGIN ======================
@@ -33,10 +48,14 @@ app.post("/login", (req, res) => {
     const { userId, password } = req.body;
 
     db.get(`SELECT * FROM users WHERE user_id = ?`, [userId], (err, user) => {
-        if (!user) return res.json({ success: false, message: "User not found" });
+        if (!user) {
+            return res.json({ success: false, message: "User not found" });
+        }
 
         const valid = bcrypt.compareSync(password, user.password);
-        if (!valid) return res.json({ success: false, message: "Invalid password" });
+        if (!valid) {
+            return res.json({ success: false, message: "Invalid password" });
+        }
 
         res.json({
             success: true,
@@ -58,98 +77,163 @@ app.get("/balance/:userId", (req, res) => {
     });
 });
 
-// ====================== LIVE MATCHES ======================
-app.get("/live-matches", async (req, res) => {
-    try {
-        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
-        const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
+// ====================== ADMIN: CREDIT / DEBIT ======================
+app.post("/admin/balance", (req, res) => {
+    const { userId, amount, type } = req.body;
 
-        const response = await fetch(url);
-        const data = await response.json();
+    db.get(`SELECT balance FROM users WHERE user_id = ?`, [userId], (err, user) => {
+        if (!user) return res.json({ success: false, message: "User not found" });
 
-        if (!data || !data.data || data.data.length === 0) {
-            return res.json({ success: false, message: "No matches found" });
+        let newBalance = user.balance;
+
+        if (type === "credit") {
+            newBalance += amount;
+        } else if (type === "debit") {
+            if (amount > user.balance) {
+                return res.json({ success: false, message: "Insufficient balance" });
+            }
+            newBalance -= amount;
         }
 
-        res.json({ success: true, matches: data.data });
-
-    } catch (err) {
-        console.error("Live matches error:", err);
-        res.status(500).json({ success: false, message: "Failed to fetch matches" });
-    }
+        db.run(
+            `UPDATE users SET balance = ? WHERE user_id = ?`,
+            [newBalance, userId],
+            (err) => {
+                if (err) return res.json({ success: false, message: "Update failed" });
+                res.json({ success: true, newBalance });
+            }
+        );
+    });
 });
 
-// ====================== ODDS API (LIVE + UPCOMING FIXED) ======================
-app.get("/odds", async (req, res) => {
-    try {
-        const apiKey = "24a858bf-39db-420d-b4c3-a3962cb2686a";
-        const url = `https://api.cricapi.com/v1/matches?apikey=${apiKey}&offset=0`;
+// ====================== PLACE BET ======================
+app.post("/bet", (req, res) => {
+    const { userId, match, team, stake, odds } = req.body;
 
-        const response = await fetch(url);
-        const data = await response.json();
+    db.get(`SELECT balance FROM users WHERE user_id = ?`, [userId], (err, user) => {
+        if (!user) return res.json({ success: false, message: "User not found" });
 
-        if (!data || !data.data) {
-            return res.json({ success: false, message: "No data returned from API" });
+        if (user.balance < stake) {
+            return res.json({ success: false, message: "Insufficient balance" });
         }
 
-        // Convert any match (live or upcoming) into markets
-        const markets = data.data.map(m => {
+        let win = Math.random() > 0.5;
+        let profit = win ? (stake * odds) - stake : -stake;
+        let newBalance = win
+            ? user.balance + (stake * odds) - stake
+            : user.balance - stake;
 
-            // CricAPI sometimes gives teams as "teams" or as "teamInfo"
-            let team1 = null;
-            let team2 = null;
+        db.run(`UPDATE users SET balance = ? WHERE user_id = ?`, [newBalance, userId]);
 
-            if (Array.isArray(m.teams) && m.teams.length >= 2) {
-                team1 = m.teams[0];
-                team2 = m.teams[1];
+        db.run(
+            `INSERT INTO bets (user_id, match, team, stake, odds, profit) VALUES (?, ?, ?, ?, ?, ?)`,
+            [userId, match, team, stake, odds, profit]
+        );
+
+        res.json({ success: true, win, profit, newBalance });
+    });
+});
+
+// ====================== BET HISTORY ======================
+app.get("/history/:userId", (req, res) => {
+    const userId = req.params.userId;
+
+    db.all(`SELECT * FROM bets WHERE user_id = ? ORDER BY id DESC`, [userId], (err, rows) => {
+        res.json({ success: true, history: rows });
+    });
+});
+
+// ===================================================================
+// ====================== SPORTBEX ODDS (ALL SPORTS) ==================
+// ===================================================================
+app.get("/odds", async (req, res) => {
+    try {
+        let allMarkets = [];
+
+        // 1️⃣ Get competitions
+        const compRes = await fetch(`${SPORTBEX_BASE}/odds/get-competitions`, {
+            headers: sportbexHeaders
+        });
+        const competitions = await compRes.json();
+
+        if (!Array.isArray(competitions)) {
+            return res.json({ success: false, message: "Invalid competitions response" });
+        }
+
+        // Limit to avoid rate limits
+        for (let i = 0; i < Math.min(competitions.length, 5); i++) {
+            const comp = competitions[i];
+
+            // 2️⃣ Get events
+            const eventsRes = await fetch(
+                `${SPORTBEX_BASE}/odds/get-events?competitionId=${comp.id}`,
+                { headers: sportbexHeaders }
+            );
+            const events = await eventsRes.json();
+            if (!Array.isArray(events)) continue;
+
+            for (let ev of events) {
+                // 3️⃣ Get market IDs
+                const marketsRes = await fetch(
+                    `${SPORTBEX_BASE}/odds/market-ids?eventId=${ev.id}`,
+                    { headers: sportbexHeaders }
+                );
+                const marketIds = await marketsRes.json();
+                if (!Array.isArray(marketIds) || marketIds.length === 0) continue;
+
+                // 4️⃣ Get odds
+                const oddsRes = await fetch(`${SPORTBEX_BASE}/odds/market-odds`, {
+                    method: "POST",
+                    headers: sportbexHeaders,
+                    body: JSON.stringify({
+                        marketIds: marketIds.slice(0, 1)
+                    })
+                });
+
+                const oddsData = await oddsRes.json();
+                if (!oddsData || !oddsData.runners || oddsData.runners.length < 2) continue;
+
+                const team1 = oddsData.runners[0].name;
+                const team2 = oddsData.runners[1].name;
+
+                allMarkets.push({
+                    sport: comp.sportName || "Sport",
+                    match: ev.name,
+                    teams: [team1, team2],
+                    odds: {
+                        [team1]: { back: oddsData.runners[0].backPrice },
+                        [team2]: { back: oddsData.runners[1].backPrice }
+                    }
+                });
             }
-            else if (Array.isArray(m.teamInfo) && m.teamInfo.length >= 2) {
-                team1 = m.teamInfo[0].name;
-                team2 = m.teamInfo[1].name;
-            }
+        }
 
-            if (!team1 || !team2) return null;
-
-            // Demo odds (replace later with real provider)
-            const odds1Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds1Lay  = (parseFloat(odds1Back) + 0.05).toFixed(2);
-            const odds2Back = (Math.random() * (2.5 - 1.5) + 1.5).toFixed(2);
-            const odds2Lay  = (parseFloat(odds2Back) + 0.05).toFixed(2);
-
-            return {
-                name: m.name || "Cricket Match",
-                status: m.status || "Upcoming",
-                startTime: m.dateTimeGMT || "TBD",
-                teams: [team1, team2],
-                odds: {
-                    [team1]: { back: odds1Back, lay: odds1Lay },
-                    [team2]: { back: odds2Back, lay: odds2Lay }
-                }
-            };
-        }).filter(Boolean);
-
-        if (markets.length === 0) {
+        if (allMarkets.length === 0) {
             return res.json({
                 success: true,
                 markets: [],
-                message: "No live or upcoming matches found by API"
+                message: "No markets available from Sportbex"
             });
         }
 
-        res.json({ success: true, markets });
+        res.json({ success: true, markets: allMarkets });
 
     } catch (err) {
-        console.error("Odds error:", err);
+        console.error("Sportbex API Error:", err);
         res.status(500).json({
             success: false,
-            message: "Failed to fetch odds",
+            message: "Sportbex API integration failed",
             error: err.toString()
         });
     }
 });
 
+// ====================== ROOT ======================
+app.get("/", (req, res) => {
+    res.send("Sportbex Betting API is running");
+});
+
 // ====================== START SERVER ======================
-const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
-    console.log("Server running on port", PORT);
+    console.log(`Server running on port ${PORT}`);
 });
