@@ -13,9 +13,9 @@ app.use(bodyParser.json());
 // ====================== CONFIG ======================
 const PORT = process.env.PORT || 3000;
 
-// 🔐 Sportbex API Config (CORRECT STRUCTURE)
+// 🔐 Sportbex API Config (FROM YOUR DASHBOARD)
 const SPORTBEX_BASE = "https://trial-api.sportbex.com";
-const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Put your real key here
+const SPORTBEX_KEY = "YOUR_SPORTBEX_API_KEY"; // 🔒 Replace with your real key
 
 const sportbexHeaders = {
     "sportbex-api-key": SPORTBEX_KEY,
@@ -138,11 +138,11 @@ app.get("/history/:userId", (req, res) => {
 // ===================================================================
 app.get("/odds", async (req, res) => {
     try {
-        const sportId = 8; // Cricket as per your screenshot
+        const sportId = 8; // Cricket (from your screenshot)
 
-        // 1️⃣ GET COMPETITIONS
+        // 1️⃣ GET COMPETITIONS (CORRECT PATH)
         const compRes = await fetch(
-            `${SPORTBEX_BASE}/api/betfair/competitions/${sportId}`,
+            `${SPORTBEX_BASE}/api/betfair/competition/${sportId}`,
             { headers: sportbexHeaders }
         );
 
